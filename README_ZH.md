@@ -534,17 +534,17 @@ Gin 使用 [**go-playground/validator.v8**](https://github.com/go-playground/val
 
 注意，在定义接收请求的 struct 类型定义中，需要在你想绑定的字段上设置对应的 tag。例如，当你想绑定 JSON 格式类型的请求体中的数据时，这样写： `json:"fieldname"`.
 
-同时， Gin 提供了两种绑定的方法:
-- **Type** - Must bind
-  - **Methods** - `Bind`, `BindJSON`, `BindXML`, `BindQuery`
-  - **Behavior** - These methods use `MustBindWith` under the hood. If there is a binding error, the request is aborted with `c.AbortWithError(400, err).SetType(ErrorTypeBind)`. This sets the response status code to 400 and the `Content-Type` header is set to `text/plain; charset=utf-8`. Note that if you try to set the response code after this, it will result in a warning `[GIN-debug] [WARNING] Headers were already written. Wanted to override status code 400 with 422`. If you wish to have greater control over the behavior, consider using the `ShouldBind` equivalent method.
-- **Type** - Should bind
+同时， Gin 提供了两种绑定的类型方法:
+- **类型(Type)** - 必须绑定(Must bind)
+  - **方法(Methods)** - `Bind`, `BindJSON`, `BindXML`, `BindQuery`
+  - **行为表现(Behavior)** - 这些方法在Gin框架引擎里店铺调用了 `MustBindWith` 方法. 绑定错误的时候会抛出一个状态码为 400 的错误 `c.AbortWithError(400, err).SetType(ErrorTypeBind)`. 该错误会在响应的报文状态码中体现， 响应的头部的`Content-Type` 为 `text/plain; charset=utf-8`. 注意，如果试图在异常发生后自定义返回的状态码， Gin将会发生一个警告：`[GIN-debug] [WARNING] Headers were already written. Wanted to override status code 400 with 422`.如果你想要进一步控制异常发生的行为，建议使用 `ShouldBind` 这个能实现相同绑定功能的方法（但你可以进一步处理错误和异常）.
+- **Type** - 应该绑定(Should bind)
   - **Methods** - `ShouldBind`, `ShouldBindJSON`, `ShouldBindXML`, `ShouldBindQuery`
-  - **Behavior** - These methods use `ShouldBindWith` under the hood. If there is a binding error, the error is returned and it is the developer's responsibility to handle the request and error appropriately.
+  - **Behavior** - 这些方法在调用了 Gin 引擎的 `ShouldBindWith` 方法. 如果发生了绑定错误，需要开发者自己处理错误.
 
-When using the Bind-method, Gin tries to infer the binder depending on the Content-Type header. If you are sure what you are binding, you can use `MustBindWith` or `ShouldBindWith`.
+在使用绑定方法时, Gin 会尝试通过 Content-Type header的类型使用哪种绑定器(方法). 如果你明确要所绑定的数据类型和格式, 那你可以用 `MustBindWith` 或 `ShouldBindWith` 方法.
 
-You can also specify that specific fields are required. If a field is decorated with `binding:"required"` and has a empty value when binding, an error will be returned.
+你也可以在声明结构体时在tag中指明必须的字段. 如果某个字段被 `binding:"required"` 修饰，但绑定到一个空的值，那将会引发一个error。
 
 ```go
 // Binding from JSON
@@ -615,7 +615,7 @@ func main() {
 }
 ```
 
-**Sample request**
+**请求示例**
 ```shell
 $ curl -v -X POST \
   http://localhost:8080/loginJSON \
@@ -641,9 +641,9 @@ $ curl -v -X POST \
 
 When running the above example using the above the `curl` command, it returns error. Because the example use `binding:"required"` for `Password`. If use `binding:"-"` for `Password`, then it will not return error when running the above example again.
 
-### Custom Validators
+### 自定义校验器(Validators)
 
-It is also possible to register custom validators. See the [example code](examples/custom-validation/server.go).
+Gin允许我们自定义检验器. 详情见 [example code](examples/custom-validation/server.go).
 
 [embedmd]:# (examples/custom-validation/server.go go)
 ```go
@@ -682,7 +682,7 @@ func main() {
 	route := gin.Default()
 
 	if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
-		v.RegisterValidation("bookabledate", bookableDate)
+		v.RegisterValidation("bookabledate", bookableDate) // 自定义参数绑定校验器
 	}
 
 	route.GET("/bookable", getBookable)
@@ -707,12 +707,12 @@ $ curl "localhost:8085/bookable?check_in=2018-03-08&check_out=2018-03-09"
 {"error":"Key: 'Booking.CheckIn' Error:Field validation for 'CheckIn' failed on the 'bookabledate' tag"}
 ```
 
-[Struct level validations](https://github.com/go-playground/validator/releases/tag/v8.7) can also be registered this way.
-See the [struct-lvl-validation example](examples/struct-lvl-validations) to learn more.
+[Struct 级别的校验](https://github.com/go-playground/validator/releases/tag/v8.7) can also be registered this way.
+See the [struct级别校验的例子 example](examples/struct-lvl-validations) to learn more.
 
-### Only Bind Query String
+### 只绑定 URL 中的查询串
 
-`ShouldBindQuery` function only binds the query params and not the post data. See the [detail information](https://github.com/gin-gonic/gin/issues/742#issuecomment-315953017).
+`ShouldBindQuery`  函数只绑定查询串中的参数(即GET请求的参数，而不会绑定POST请求的参数). 见 [detail information](https://github.com/gin-gonic/gin/issues/742#issuecomment-315953017).
 
 ```go
 package main
@@ -746,9 +746,9 @@ func startPage(c *gin.Context) {
 
 ```
 
-### Bind Query String or Post Data
+### 绑定URL参数或Post Data
 
-See the [detail information](https://github.com/gin-gonic/gin/issues/742#issuecomment-264681292).
+见 [detail information](https://github.com/gin-gonic/gin/issues/742#issuecomment-264681292).
 
 ```go
 package main
@@ -774,8 +774,8 @@ func main() {
 
 func startPage(c *gin.Context) {
 	var person Person
-	// If `GET`, only `Form` binding engine (`query`) used.
-	// If `POST`, first checks the `content-type` for `JSON` or `XML`, then uses `Form` (`form-data`).
+	// 如果接收到 `GET` 请求, 那么 Gin只使用 `Form` 绑定引擎 (`query`)来解析.
+	// 如果接收到 `POST` 请求, 首先会检查 `content-type` 是 `JSON` 还是 `XML`,并作对应的解析	 如果都不匹配则使用默认的 `Form` (`form-data`).
 	// See more at https://github.com/gin-gonic/gin/blob/master/binding/binding.go#L48
 	if c.ShouldBind(&person) == nil {
 		log.Println(person.Name)
@@ -787,14 +787,14 @@ func startPage(c *gin.Context) {
 }
 ```
 
-Test it with:
+用下面这条命令来测试:
 ```sh
 $ curl -X GET "localhost:8085/testing?name=appleboy&address=xyz&birthday=1992-03-15"
 ```
 
-### Bind HTML checkboxes
+### 绑定HTML中的复选框(checkbox)
 
-See the [detail information](https://github.com/gin-gonic/gin/issues/129#issuecomment-124260092)
+见[detail information](https://github.com/gin-gonic/gin/issues/129#issuecomment-124260092)
 
 main.go
 
