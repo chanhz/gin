@@ -837,3 +837,1100 @@ result:
 ```
 {"color":["red","green","blue"]}
 ```
+
+### 混合绑定
+
+```go
+package main
+
+import (
+	"github.com/gin-gonic/gin"
+)
+
+type LoginForm struct {
+	User     string `form:"user" binding:"required"`
+	Password string `form:"password" binding:"required"`
+}
+
+func main() {
+	router := gin.Default()
+	router.POST("/login", func(c *gin.Context) {
+		// you can bind multipart form with explicit binding declaration:
+		// c.ShouldBindWith(&form, binding.Form)
+		// or you can simply use autobinding with ShouldBind method:
+		var form LoginForm
+		// in this case proper binding will be automatically selected
+		if c.ShouldBind(&form) == nil {
+			if form.User == "user" && form.Password == "password" {
+				c.JSON(200, gin.H{"status": "you are logged in"})
+			} else {
+				c.JSON(401, gin.H{"status": "unauthorized"})
+			}
+		}
+	})
+	router.Run(":8080")
+}
+```
+
+Test it with:
+```sh
+$ curl -v --form user=user --form password=password http://localhost:8080/login
+```
+
+### XML, JSON, YAML and ProtoBuf 格式的渲染
+
+```go
+func main() {
+	r := gin.Default()
+
+	// gin.H 是 map[string]interface{} 的缩写
+	r.GET("/someJSON", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"message": "hey", "status": http.StatusOK})
+	})
+
+	r.GET("/moreJSON", func(c *gin.Context) {
+		// 因为 map 的 value 是 interface 类型，所以你也可以使用 struct
+		var msg struct {
+			Name    string `json:"user"`
+			Message string
+			Number  int
+		}
+		msg.Name = "Lena"
+		msg.Message = "hey"
+		msg.Number = 123
+		// Note that msg.Name becomes "user" in the JSON
+		// Will output  :   {"user": "Lena", "Message": "hey", "Number": 123}
+		c.JSON(http.StatusOK, msg)
+	})
+
+	r.GET("/someXML", func(c *gin.Context) {
+		c.XML(http.StatusOK, gin.H{"message": "hey", "status": http.StatusOK})
+	})
+
+	r.GET("/someYAML", func(c *gin.Context) {
+		c.YAML(http.StatusOK, gin.H{"message": "hey", "status": http.StatusOK})
+	})
+
+	r.GET("/someProtoBuf", func(c *gin.Context) {
+		reps := []int64{int64(1), int64(2)}
+		label := "test"
+		// 该 protobuf 的定义会写到 testdata/protoexample 文件里
+		data := &protoexample.Test{
+			Label: &label,
+			Reps:  reps,
+		}
+		// 注意，相应里数据会被序列化成二进制的数据
+		// 会输出 protoexample.Test protobuf 序列化后的数据
+		c.ProtoBuf(http.StatusOK, data)
+	})
+
+	// Listen and serve on 0.0.0.0:8080
+	r.Run(":8080")
+}
+```
+
+#### SecureJSON
+
+使用 SecureJSON 可以防止 json 攻击 (json hijacking). 如果向给定的要响应的struct数据结构传入数组类型的值，默认会在输出结果前加上 `"while(1),"`
+
+```go
+func main() {
+	r := gin.Default()
+
+	// 也可以用自定义的 json 安全前缀来检验
+	// r.SecureJsonPrefix(")]}',\n")
+
+	r.GET("/someJSON", func(c *gin.Context) {
+		names := []string{"lena", "austin", "foo"}
+
+		// Will output  :   while(1);["lena","austin","foo"]
+		c.SecureJSON(http.StatusOK, names)
+	})
+
+	// Listen and serve on 0.0.0.0:8080
+	r.Run(":8080")
+}
+```
+#### JSONP
+
+解决跨域问题：可以使用JSONP 方法来请求其他域名的数据， 要接收并处理请求结果，需要定义一个回调函数来解析.
+
+```go
+func main() {
+	r := gin.Default()
+
+	r.GET("/JSONP?callback=x", func(c *gin.Context) {
+		data := map[string]interface{}{
+			"foo": "bar",
+		}
+		
+		//callback is x
+		// Will output  :   x({\"foo\":\"bar\"})
+		c.JSONP(http.StatusOK, data)
+	})
+
+	// Listen and serve on 0.0.0.0:8080
+	r.Run(":8080")
+}
+```
+
+#### AsciiJSON
+
+使用 AsciiJSON to 来将非ASCII码字符集中的字符转换成 ASCII码 (ASCII-only) 再响应.
+
+```go
+func main() {
+	r := gin.Default()
+
+	r.GET("/someJSON", func(c *gin.Context) {
+		data := map[string]interface{}{
+			"lang": "GO语言",
+			"tag":  "<br>",
+		}
+
+		// will output : {"lang":"GO\u8bed\u8a00","tag":"\u003cbr\u003e"}
+		c.AsciiJSON(http.StatusOK, data)
+	})
+
+	// Listen and serve on 0.0.0.0:8080
+	r.Run(":8080")
+}
+```
+
+#### PureJSON
+
+Normally, JSON replaces special HTML characters with their unicode entities, e.g. `<` becomes  `\u003c`. If you want to encode such characters literally, you can use PureJSON instead.
+This feature is unavailable in Go 1.6 and lower.
+
+```go
+func main() {
+	r := gin.Default()
+	
+	// Serves unicode entities
+	r.GET("/json", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"html": "<b>Hello, world!</b>",
+		})
+	})
+	
+	// Serves literal characters
+	r.GET("/purejson", func(c *gin.Context) {
+		c.PureJSON(200, gin.H{
+			"html": "<b>Hello, world!</b>",
+		})
+	})
+	
+	// listen and serve on 0.0.0.0:8080
+	r.Run(":8080)
+}
+```
+
+### Serving static files
+
+```go
+func main() {
+	router := gin.Default()
+	router.Static("/assets", "./assets")
+	router.StaticFS("/more_static", http.Dir("my_file_system"))
+	router.StaticFile("/favicon.ico", "./resources/favicon.ico")
+
+	// Listen and serve on 0.0.0.0:8080
+	router.Run(":8080")
+}
+```
+
+### Serving data from reader
+
+```go
+func main() {
+	router := gin.Default()
+	router.GET("/someDataFromReader", func(c *gin.Context) {
+		response, err := http.Get("https://raw.githubusercontent.com/gin-gonic/logo/master/color.png")
+		if err != nil || response.StatusCode != http.StatusOK {
+			c.Status(http.StatusServiceUnavailable)
+			return
+		}
+
+		reader := response.Body
+		contentLength := response.ContentLength
+		contentType := response.Header.Get("Content-Type")
+
+		extraHeaders := map[string]string{
+			"Content-Disposition": `attachment; filename="gopher.png"`,
+		}
+
+		c.DataFromReader(http.StatusOK, contentLength, contentType, reader, extraHeaders)
+	})
+	router.Run(":8080")
+}
+```
+
+### HTML rendering
+
+Using LoadHTMLGlob() or LoadHTMLFiles()
+
+```go
+func main() {
+	router := gin.Default()
+	router.LoadHTMLGlob("templates/*")
+	//router.LoadHTMLFiles("templates/template1.html", "templates/template2.html")
+	router.GET("/index", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "index.tmpl", gin.H{
+			"title": "Main website",
+		})
+	})
+	router.Run(":8080")
+}
+```
+
+templates/index.tmpl
+
+```html
+<html>
+	<h1>
+		{{ .title }}
+	</h1>
+</html>
+```
+
+Using templates with same name in different directories
+
+```go
+func main() {
+	router := gin.Default()
+	router.LoadHTMLGlob("templates/**/*")
+	router.GET("/posts/index", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "posts/index.tmpl", gin.H{
+			"title": "Posts",
+		})
+	})
+	router.GET("/users/index", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "users/index.tmpl", gin.H{
+			"title": "Users",
+		})
+	})
+	router.Run(":8080")
+}
+```
+
+templates/posts/index.tmpl
+
+```html
+{{ define "posts/index.tmpl" }}
+<html><h1>
+	{{ .title }}
+</h1>
+<p>Using posts/index.tmpl</p>
+</html>
+{{ end }}
+```
+
+templates/users/index.tmpl
+
+```html
+{{ define "users/index.tmpl" }}
+<html><h1>
+	{{ .title }}
+</h1>
+<p>Using users/index.tmpl</p>
+</html>
+{{ end }}
+```
+
+#### Custom Template renderer
+
+You can also use your own html template render
+
+```go
+import "html/template"
+
+func main() {
+	router := gin.Default()
+	html := template.Must(template.ParseFiles("file1", "file2"))
+	router.SetHTMLTemplate(html)
+	router.Run(":8080")
+}
+```
+
+#### Custom Delimiters
+
+You may use custom delims
+
+```go
+	r := gin.Default()
+	r.Delims("{[{", "}]}")
+	r.LoadHTMLGlob("/path/to/templates"))
+```
+
+#### Custom Template Funcs
+
+See the detail [example code](examples/template).
+
+main.go
+
+```go
+import (
+    "fmt"
+    "html/template"
+    "net/http"
+    "time"
+
+    "github.com/gin-gonic/gin"
+)
+
+func formatAsDate(t time.Time) string {
+    year, month, day := t.Date()
+    return fmt.Sprintf("%d%02d/%02d", year, month, day)
+}
+
+func main() {
+    router := gin.Default()
+    router.Delims("{[{", "}]}")
+    router.SetFuncMap(template.FuncMap{
+        "formatAsDate": formatAsDate,
+    })
+    router.LoadHTMLFiles("./testdata/template/raw.tmpl")
+
+    router.GET("/raw", func(c *gin.Context) {
+        c.HTML(http.StatusOK, "raw.tmpl", map[string]interface{}{
+            "now": time.Date(2017, 07, 01, 0, 0, 0, 0, time.UTC),
+        })
+    })
+
+    router.Run(":8080")
+}
+
+```
+
+raw.tmpl
+
+```html
+Date: {[{.now | formatAsDate}]}
+```
+
+Result:
+```
+Date: 2017/07/01
+```
+
+### Multitemplate
+
+Gin allow by default use only one html.Template. Check [a multitemplate render](https://github.com/gin-contrib/multitemplate) for using features like go 1.6 `block template`.
+
+### Redirects
+
+Issuing a HTTP redirect is easy. Both internal and external locations are supported.
+
+```go
+r.GET("/test", func(c *gin.Context) {
+	c.Redirect(http.StatusMovedPermanently, "http://www.google.com/")
+})
+```
+
+
+Issuing a Router redirect, use `HandleContext` like below.
+
+``` go
+r.GET("/test", func(c *gin.Context) {
+    c.Request.URL.Path = "/test2"
+    r.HandleContext(c)
+})
+r.GET("/test2", func(c *gin.Context) {
+    c.JSON(200, gin.H{"hello": "world"})
+})
+```
+
+
+### Custom Middleware
+
+```go
+func Logger() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		t := time.Now()
+
+		// Set example variable
+		c.Set("example", "12345")
+
+		// before request
+
+		c.Next()
+
+		// after request
+		latency := time.Since(t)
+		log.Print(latency)
+
+		// access the status we are sending
+		status := c.Writer.Status()
+		log.Println(status)
+	}
+}
+
+func main() {
+	r := gin.New()
+	r.Use(Logger())
+
+	r.GET("/test", func(c *gin.Context) {
+		example := c.MustGet("example").(string)
+
+		// it would print: "12345"
+		log.Println(example)
+	})
+
+	// Listen and serve on 0.0.0.0:8080
+	r.Run(":8080")
+}
+```
+
+### Using BasicAuth() middleware
+
+```go
+// simulate some private data
+var secrets = gin.H{
+	"foo":    gin.H{"email": "foo@bar.com", "phone": "123433"},
+	"austin": gin.H{"email": "austin@example.com", "phone": "666"},
+	"lena":   gin.H{"email": "lena@guapa.com", "phone": "523443"},
+}
+
+func main() {
+	r := gin.Default()
+
+	// Group using gin.BasicAuth() middleware
+	// gin.Accounts is a shortcut for map[string]string
+	authorized := r.Group("/admin", gin.BasicAuth(gin.Accounts{
+		"foo":    "bar",
+		"austin": "1234",
+		"lena":   "hello2",
+		"manu":   "4321",
+	}))
+
+	// /admin/secrets endpoint
+	// hit "localhost:8080/admin/secrets
+	authorized.GET("/secrets", func(c *gin.Context) {
+		// get user, it was set by the BasicAuth middleware
+		user := c.MustGet(gin.AuthUserKey).(string)
+		if secret, ok := secrets[user]; ok {
+			c.JSON(http.StatusOK, gin.H{"user": user, "secret": secret})
+		} else {
+			c.JSON(http.StatusOK, gin.H{"user": user, "secret": "NO SECRET :("})
+		}
+	})
+
+	// Listen and serve on 0.0.0.0:8080
+	r.Run(":8080")
+}
+```
+
+### Goroutines inside a middleware
+
+When starting new Goroutines inside a middleware or handler, you **SHOULD NOT** use the original context inside it, you have to use a read-only copy.
+
+```go
+func main() {
+	r := gin.Default()
+
+	r.GET("/long_async", func(c *gin.Context) {
+		// create copy to be used inside the goroutine
+		cCp := c.Copy()
+		go func() {
+			// simulate a long task with time.Sleep(). 5 seconds
+			time.Sleep(5 * time.Second)
+
+			// note that you are using the copied context "cCp", IMPORTANT
+			log.Println("Done! in path " + cCp.Request.URL.Path)
+		}()
+	})
+
+	r.GET("/long_sync", func(c *gin.Context) {
+		// simulate a long task with time.Sleep(). 5 seconds
+		time.Sleep(5 * time.Second)
+
+		// since we are NOT using a goroutine, we do not have to copy the context
+		log.Println("Done! in path " + c.Request.URL.Path)
+	})
+
+	// Listen and serve on 0.0.0.0:8080
+	r.Run(":8080")
+}
+```
+
+### Custom HTTP configuration
+
+Use `http.ListenAndServe()` directly, like this:
+
+```go
+func main() {
+	router := gin.Default()
+	http.ListenAndServe(":8080", router)
+}
+```
+or
+
+```go
+func main() {
+	router := gin.Default()
+
+	s := &http.Server{
+		Addr:           ":8080",
+		Handler:        router,
+		ReadTimeout:    10 * time.Second,
+		WriteTimeout:   10 * time.Second,
+		MaxHeaderBytes: 1 << 20,
+	}
+	s.ListenAndServe()
+}
+```
+
+### Support Let's Encrypt
+
+example for 1-line LetsEncrypt HTTPS servers.
+
+[embedmd]:# (examples/auto-tls/example1/main.go go)
+```go
+package main
+
+import (
+	"log"
+
+	"github.com/gin-gonic/autotls"
+	"github.com/gin-gonic/gin"
+)
+
+func main() {
+	r := gin.Default()
+
+	// Ping handler
+	r.GET("/ping", func(c *gin.Context) {
+		c.String(200, "pong")
+	})
+
+	log.Fatal(autotls.Run(r, "example1.com", "example2.com"))
+}
+```
+
+example for custom autocert manager.
+
+[embedmd]:# (examples/auto-tls/example2/main.go go)
+```go
+package main
+
+import (
+	"log"
+
+	"github.com/gin-gonic/autotls"
+	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/acme/autocert"
+)
+
+func main() {
+	r := gin.Default()
+
+	// Ping handler
+	r.GET("/ping", func(c *gin.Context) {
+		c.String(200, "pong")
+	})
+
+	m := autocert.Manager{
+		Prompt:     autocert.AcceptTOS,
+		HostPolicy: autocert.HostWhitelist("example1.com", "example2.com"),
+		Cache:      autocert.DirCache("/var/www/.cache"),
+	}
+
+	log.Fatal(autotls.RunWithManager(r, &m))
+}
+```
+
+### Run multiple service using Gin
+
+See the [question](https://github.com/gin-gonic/gin/issues/346) and try the following example:
+
+[embedmd]:# (examples/multiple-service/main.go go)
+```go
+package main
+
+import (
+	"log"
+	"net/http"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"golang.org/x/sync/errgroup"
+)
+
+var (
+	g errgroup.Group
+)
+
+func router01() http.Handler {
+	e := gin.New()
+	e.Use(gin.Recovery())
+	e.GET("/", func(c *gin.Context) {
+		c.JSON(
+			http.StatusOK,
+			gin.H{
+				"code":  http.StatusOK,
+				"error": "Welcome server 01",
+			},
+		)
+	})
+
+	return e
+}
+
+func router02() http.Handler {
+	e := gin.New()
+	e.Use(gin.Recovery())
+	e.GET("/", func(c *gin.Context) {
+		c.JSON(
+			http.StatusOK,
+			gin.H{
+				"code":  http.StatusOK,
+				"error": "Welcome server 02",
+			},
+		)
+	})
+
+	return e
+}
+
+func main() {
+	server01 := &http.Server{
+		Addr:         ":8080",
+		Handler:      router01(),
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+	}
+
+	server02 := &http.Server{
+		Addr:         ":8081",
+		Handler:      router02(),
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+	}
+
+	g.Go(func() error {
+		return server01.ListenAndServe()
+	})
+
+	g.Go(func() error {
+		return server02.ListenAndServe()
+	})
+
+	if err := g.Wait(); err != nil {
+		log.Fatal(err)
+	}
+}
+```
+
+### Graceful restart or stop
+
+Do you want to graceful restart or stop your web server?
+There are some ways this can be done.
+
+We can use [fvbock/endless](https://github.com/fvbock/endless) to replace the default `ListenAndServe`. Refer issue [#296](https://github.com/gin-gonic/gin/issues/296) for more details.
+
+```go
+router := gin.Default()
+router.GET("/", handler)
+// [...]
+endless.ListenAndServe(":4242", router)
+```
+
+An alternative to endless:
+
+* [manners](https://github.com/braintree/manners): A polite Go HTTP server that shuts down gracefully.
+* [graceful](https://github.com/tylerb/graceful): Graceful is a Go package enabling graceful shutdown of an http.Handler server.
+* [grace](https://github.com/facebookgo/grace): Graceful restart & zero downtime deploy for Go servers.
+
+If you are using Go 1.8, you may not need to use this library! Consider using http.Server's built-in [Shutdown()](https://golang.org/pkg/net/http/#Server.Shutdown) method for graceful shutdowns. See the full [graceful-shutdown](./examples/graceful-shutdown) example with gin.
+
+[embedmd]:# (examples/graceful-shutdown/graceful-shutdown/server.go go)
+```go
+// +build go1.8
+
+package main
+
+import (
+	"context"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"time"
+
+	"github.com/gin-gonic/gin"
+)
+
+func main() {
+	router := gin.Default()
+	router.GET("/", func(c *gin.Context) {
+		time.Sleep(5 * time.Second)
+		c.String(http.StatusOK, "Welcome Gin Server")
+	})
+
+	srv := &http.Server{
+		Addr:    ":8080",
+		Handler: router,
+	}
+
+	go func() {
+		// service connections
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("listen: %s\n", err)
+		}
+	}()
+
+	// Wait for interrupt signal to gracefully shutdown the server with
+	// a timeout of 5 seconds.
+	quit := make(chan os.Signal)
+	signal.Notify(quit, os.Interrupt)
+	<-quit
+	log.Println("Shutdown Server ...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatal("Server Shutdown:", err)
+	}
+	log.Println("Server exiting")
+}
+```
+
+### Build a single binary with templates
+
+You can build a server into a single binary containing templates by using [go-assets][].
+
+[go-assets]: https://github.com/jessevdk/go-assets
+
+```go
+func main() {
+	r := gin.New()
+
+	t, err := loadTemplate()
+	if err != nil {
+		panic(err)
+	}
+	r.SetHTMLTemplate(t)
+
+	r.GET("/", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "/html/index.tmpl",nil)
+	})
+	r.Run(":8080")
+}
+
+// loadTemplate loads templates embedded by go-assets-builder
+func loadTemplate() (*template.Template, error) {
+	t := template.New("")
+	for name, file := range Assets.Files {
+		if file.IsDir() || !strings.HasSuffix(name, ".tmpl") {
+			continue
+		}
+		h, err := ioutil.ReadAll(file)
+		if err != nil {
+			return nil, err
+		}
+		t, err = t.New(name).Parse(string(h))
+		if err != nil {
+			return nil, err
+		}
+	}
+	return t, nil
+}
+```
+
+See a complete example in the `examples/assets-in-binary` directory.
+
+### Bind form-data request with custom struct
+
+The follow example using custom struct:
+
+```go
+type StructA struct {
+    FieldA string `form:"field_a"`
+}
+
+type StructB struct {
+    NestedStruct StructA
+    FieldB string `form:"field_b"`
+}
+
+type StructC struct {
+    NestedStructPointer *StructA
+    FieldC string `form:"field_c"`
+}
+
+type StructD struct {
+    NestedAnonyStruct struct {
+        FieldX string `form:"field_x"`
+    }
+    FieldD string `form:"field_d"`
+}
+
+func GetDataB(c *gin.Context) {
+    var b StructB
+    c.Bind(&b)
+    c.JSON(200, gin.H{
+        "a": b.NestedStruct,
+        "b": b.FieldB,
+    })
+}
+
+func GetDataC(c *gin.Context) {
+    var b StructC
+    c.Bind(&b)
+    c.JSON(200, gin.H{
+        "a": b.NestedStructPointer,
+        "c": b.FieldC,
+    })
+}
+
+func GetDataD(c *gin.Context) {
+    var b StructD
+    c.Bind(&b)
+    c.JSON(200, gin.H{
+        "x": b.NestedAnonyStruct,
+        "d": b.FieldD,
+    })
+}
+
+func main() {
+    r := gin.Default()
+    r.GET("/getb", GetDataB)
+    r.GET("/getc", GetDataC)
+    r.GET("/getd", GetDataD)
+
+    r.Run()
+}
+```
+
+Using the command `curl` command result:
+
+```
+$ curl "http://localhost:8080/getb?field_a=hello&field_b=world"
+{"a":{"FieldA":"hello"},"b":"world"}
+$ curl "http://localhost:8080/getc?field_a=hello&field_c=world"
+{"a":{"FieldA":"hello"},"c":"world"}
+$ curl "http://localhost:8080/getd?field_x=hello&field_d=world"
+{"d":"world","x":{"FieldX":"hello"}}
+```
+
+**NOTE**: NOT support the follow style struct:
+
+```go
+type StructX struct {
+    X struct {} `form:"name_x"` // HERE have form
+}
+
+type StructY struct {
+    Y StructX `form:"name_y"` // HERE hava form
+}
+
+type StructZ struct {
+    Z *StructZ `form:"name_z"` // HERE hava form
+}
+```
+
+In a word, only support nested custom struct which have no `form` now.
+
+### Try to bind body into different structs
+
+The normal methods for binding request body consumes `c.Request.Body` and they
+cannot be called multiple times.
+
+```go
+type formA struct {
+  Foo string `json:"foo" xml:"foo" binding:"required"`
+}
+
+type formB struct {
+  Bar string `json:"bar" xml:"bar" binding:"required"`
+}
+
+func SomeHandler(c *gin.Context) {
+  objA := formA{}
+  objB := formB{}
+  // This c.ShouldBind consumes c.Request.Body and it cannot be reused.
+  if errA := c.ShouldBind(&objA); errA == nil {
+    c.String(http.StatusOK, `the body should be formA`)
+  // Always an error is occurred by this because c.Request.Body is EOF now.
+  } else if errB := c.ShouldBind(&objB); errB == nil {
+    c.String(http.StatusOK, `the body should be formB`)
+  } else {
+    ...
+  }
+}
+```
+
+For this, you can use `c.ShouldBindBodyWith`.
+
+```go
+func SomeHandler(c *gin.Context) {
+  objA := formA{}
+  objB := formB{}
+  // This reads c.Request.Body and stores the result into the context.
+  if errA := c.ShouldBindBodyWith(&objA, binding.JSON); errA == nil {
+    c.String(http.StatusOK, `the body should be formA`)
+  // At this time, it reuses body stored in the context.
+  } else if errB := c.ShouldBindBodyWith(&objB, binding.JSON); errB == nil {
+    c.String(http.StatusOK, `the body should be formB JSON`)
+  // And it can accepts other formats
+  } else if errB2 := c.ShouldBindBodyWith(&objB, binding.XML); errB2 == nil {
+    c.String(http.StatusOK, `the body should be formB XML`)
+  } else {
+    ...
+  }
+}
+```
+
+* `c.ShouldBindBodyWith` stores body into the context before binding. This has
+a slight impact to performance, so you should not use this method if you are
+enough to call binding at once.
+* This feature is only needed for some formats -- `JSON`, `XML`, `MsgPack`,
+`ProtoBuf`. For other formats, `Query`, `Form`, `FormPost`, `FormMultipart`,
+can be called by `c.ShouldBind()` multiple times without any damage to
+performance (See [#1341](https://github.com/gin-gonic/gin/pull/1341)).
+
+### http2 server push
+
+http.Pusher is supported only **go1.8+**. See the [golang blog](https://blog.golang.org/h2push) for detail information.
+
+[embedmd]:# (examples/http-pusher/main.go go)
+```go
+package main
+
+import (
+	"html/template"
+	"log"
+
+	"github.com/gin-gonic/gin"
+)
+
+var html = template.Must(template.New("https").Parse(`
+<html>
+<head>
+  <title>Https Test</title>
+  <script src="/assets/app.js"></script>
+</head>
+<body>
+  <h1 style="color:red;">Welcome, Ginner!</h1>
+</body>
+</html>
+`))
+
+func main() {
+	r := gin.Default()
+	r.Static("/assets", "./assets")
+	r.SetHTMLTemplate(html)
+
+	r.GET("/", func(c *gin.Context) {
+		if pusher := c.Writer.Pusher(); pusher != nil {
+			// use pusher.Push() to do server push
+			if err := pusher.Push("/assets/app.js", nil); err != nil {
+				log.Printf("Failed to push: %v", err)
+			}
+		}
+		c.HTML(200, "https", gin.H{
+			"status": "success",
+		})
+	})
+
+	// Listen and Server in https://127.0.0.1:8080
+	r.RunTLS(":8080", "./testdata/server.pem", "./testdata/server.key")
+}
+```
+
+### Define format for the log of routes
+
+The default log of routes is:
+```
+[GIN-debug] POST   /foo                      --> main.main.func1 (3 handlers)
+[GIN-debug] GET    /bar                      --> main.main.func2 (3 handlers)
+[GIN-debug] GET    /status                   --> main.main.func3 (3 handlers)
+```
+
+If you want to log this information in given format (e.g. JSON, key values or something else), then you can define this format with `gin.DebugPrintRouteFunc`.
+In the example below, we log all routes with standard log package but you can use another log tools that suits of your needs.
+```go
+import (
+	"log"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+)
+
+func main() {
+	r := gin.Default()
+	gin.DebugPrintRouteFunc = func(httpMethod, absolutePath, handlerName string, nuHandlers int) {
+		log.Printf("endpoint %v %v %v %v\n", httpMethod, absolutePath, handlerName, nuHandlers)
+	}
+
+	r.POST("/foo", func(c *gin.Context) {
+		c.JSON(http.StatusOK, "foo")
+	})
+
+	r.GET("/bar", func(c *gin.Context) {
+		c.JSON(http.StatusOK, "bar")
+	})
+
+	r.GET("/status", func(c *gin.Context) {
+		c.JSON(http.StatusOK, "ok")
+	})
+
+	// Listen and Server in http://0.0.0.0:8080
+	r.Run()
+}
+```
+
+
+## Testing
+
+The `net/http/httptest` package is preferable way for HTTP testing.
+
+```go
+package main
+
+func setupRouter() *gin.Engine {
+	r := gin.Default()
+	r.GET("/ping", func(c *gin.Context) {
+		c.String(200, "pong")
+	})
+	return r
+}
+
+func main() {
+	r := setupRouter()
+	r.Run(":8080")
+}
+```
+
+Test for code example above:
+
+```go
+package main
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
+
+func TestPingRoute(t *testing.T) {
+	router := setupRouter()
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/ping", nil)
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, 200, w.Code)
+	assert.Equal(t, "pong", w.Body.String())
+}
+```
+
+## Users
+
+Awesome project lists using [Gin](https://github.com/gin-gonic/gin) web framework.
+
+* [drone](https://github.com/drone/drone): Drone is a Continuous Delivery platform built on Docker, written in Go.
+* [gorush](https://github.com/appleboy/gorush): A push notification server written in Go.
+* [fnproject](https://github.com/fnproject/fn): The container native, cloud agnostic serverless platform.
